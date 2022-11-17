@@ -1,23 +1,22 @@
 ---
-title: "Homework 5"
-author: "Tim Hauser"
+title: "Homework 5 solutions"
+author: "Jeff Goldsmith"
+date: '`r format(Sys.time(), "%Y-%m-%d")`'
 output: github_document
 ---
 
-## Initial setup
-
-```{r}
+```{r setup, include=FALSE}
 library(tidyverse)
-library(rvest)
 library(p8105.datasets)
+library(viridis)
 
 knitr::opts_chunk$set(
-  fig.width = 6,
-  fig.asp = .6,
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
   out.width = "90%"
 )
-
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
 options(
   ggplot2.continuous.colour = "viridis",
@@ -26,7 +25,34 @@ options(
 
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
+
+
+### Due date
+
+Due: November 16 at 11:59pm. 
+
+### Points
+
+| Problem         | Points    |
+|:--------------- |:--------- |
+| Problem 0       | 20        |
+| Problem 1       | --        |
+| Problem 2       | 40        |
+| Problem 3       | 40        |
+| Optional survey | No points |
+
+
+### Problem 0
+
+This "problem" focuses on structure of your submission, especially the use git and GitHub for reproducibility, R Projects to organize your work, R Markdown to write reproducible reports, relative paths to load data from local files, and reasonable naming structures for your files. This was not prepared as a GitHub repo.
+
+```{r load_libraries}
+library(tidyverse)
+```
+
 
 ## Problem 1
 
