@@ -71,4 +71,28 @@ tidy_df %>%
 
 This plot suggests high within-subject correlation -- subjects who start above average end up above average, and those that start below average end up below average. Subjects in the control group generally don't change over time, but those in the experiment group increase their outcome in a roughly linear way. 
 
+## Problem 2
+
+I downloaded the .csv file from github and added it to the data folder. The following code chunk imports the data into R as a dataframe:
+
+```{r}
+homicide_raw = read.csv("./data/homicide-data.csv") %>% 
+  janitor::clean_names()
+```
+
+The homicides dataset was gathered and made public by The Washington Post on more than 52,000 criminal homicides over the past decade in 50 large U.S. cities. It contains ``r nrow(homicide_raw)`` observations of homicides and ``r ncol(homicide_raw)`` variables, namely ``r names(homicide_raw)``. The variables contain information about the date of the homicide, the victim (name, age, race, sex), the location of the homicide (city, state, lon, lat) and whether an arrest was made or not. 
+
+Next, I created a city_state variable (e.g. “Baltimore, MD”) and status variable indicating whether a homicide was solved (those for which the disposition is “Closed by arrest”) or unsolved (those for which the disposition is “Closed without arrest” or “Open/No arrest”):
+
+```{r}
+homicide_df = homicide_raw %>% 
+  mutate(city_state = str_c(city, ", ", state),
+         status = case_when(
+           disposition == "Closed without arrest" ~ "unsolved",
+           disposition == "Open/No arrest" ~ "unsolved",
+           disposition == "Closed by arrest" ~ "solved"
+         ))
+```
+
+nd summarized within cities to obtain the total number of homicides and the number of unsolved homicides.
 
