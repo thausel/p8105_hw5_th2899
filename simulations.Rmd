@@ -1,0 +1,235 @@
+---
+title: "Simulations"
+author: "Tim Hauser"
+output: github_document
+---
+
+## Initial setup
+
+```{r}
+library(tidyverse)
+library(rvest)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(1)
+```
+
+## Simulation: Mean and SD for one n
+
+That function is below:
+
+```{r}
+sim_mean_sd = function(n, mu = 2, sigma = 3) {
+  
+  sim_data = tibble(
+    x = rnorm(n, mean = mu, sd = sigma),
+  )
+  
+  sim_data %>% 
+    summarize(
+      mu_hat = mean(x),
+      sigma_hat = sd(x)
+    )
+}
+```
+
+Important statistical properties of estimates μ^ are established under the conceptual framework of repeated sampling. If you could draw from a population over and over, your estimates will have a known distribution. Because our simulation design generates observations from a Normal distribution we also know that the estimates follow a Normal distribution, although that’s not guaranteed in general. You can do some work to understand the distribution of σ^, but it’s … messier. In the real world, drawing samples is time consuming and costly, so “repeated sampling” remains conceptual. On a computer, though, drawing samples is pretty easy. That makes simulation an appealing way to examine the statistical properties of your estimators.
+
+Let’s run sim_mean_sd() 100 times to see the effect of randomness in xi on estimates μ^,σ^.
+
+```{r}
+output = vector("list", 100)
+
+for (i in 1:100) {
+  output[[i]] = sim_mean_sd(30)
+}
+
+sim_results = bind_rows(output)
+
+sim_results
+```
+
+Taking a look at the for loop we used to create these results, you might notice that there’s no input list – the sequence is used to keep track of the output but doesn’t affect the computation performed inside the for loop. We can still use map to carry this out, of course – we’ll just be mapping over something that doesn’t change.
+
+In the code below, I create a data frame with rows for 100 iterations; the sample size column is fixed at 30 in every row. Then, using ideas from iteration and list columns, I’ll map my sim_mean_sd function over the sample_size column to replicate the simulation in the previous loop.
+
+```{r}
+sim_results_df = 
+  expand_grid(
+    sample_size = 30,
+    iter = 1:100
+  ) %>% 
+  mutate(
+    estimate_df = map(sample_size, sim_mean_sd)
+  ) %>% 
+  unnest(estimate_df)
+
+sim_results_df
+```
+
+Critically, the result is a dataframe which can be manipulated or used in ways we’re now pretty familiar with. Let’s make some quick plots and compute some summaries for our simulation results.
+
+```{r}
+sim_results_df %>% 
+  ggplot(aes(x = mu_hat)) + 
+  geom_density()
+```
+
+```{r}
+sim_results_df %>% 
+  pivot_longer(
+    mu_hat:sigma_hat,
+    names_to = "parameter", 
+    values_to = "estimate") %>% 
+  group_by(parameter) %>% 
+  summarize(
+    emp_mean = mean(estimate),
+    emp_sd = sd(estimate)) %>% 
+  knitr::kable(digits = 3)
+```
+
+##Simulation: Mean for several ns
+
+Sample size makes a huge difference on the variance of estimates in SLR (and pretty much every statistical method). Let’s try to clarify that effect through simulating at a few sample sizes.
+
+Building on the code above, I’ll set up a tibble with iterations and the sample sizes I want to investigate using expand_grid. From there, the steps are similar to they were before – we’ll apply the sim_mean_sd function to each iteration of each sample size and unnest the result.
+
+```{r}
+sim_results_df = 
+  expand_grid(
+    sample_size = c(30, 60, 120, 240),
+    iter = 1:1000
+  ) %>% 
+  mutate(
+    estimate_df = map(sample_size, sim_mean_sd)
+  ) %>% 
+  unnest(estimate_df)
+
+sim_results_df
+```
+
+Let’s take a look at what we’ve accomplished in our simulations! First I’ll take a look at the distribution of mean estimates across sample sizes.
+
+```{r}
+sim_results_df %>% 
+  mutate(
+    sample_size = str_c("n = ", sample_size),
+    sample_size = fct_inorder(sample_size)) %>% 
+  ggplot(aes(x = sample_size, y = mu_hat, fill = sample_size)) + 
+  geom_violin()
+```
+
+These estimates are centered around the truth (2) for each sample size, and the width of the distribution shrinks as sample size grows.
+
+Lastly I’ll look at the empirical mean and variance of these estimates.
+
+```{r}
+sim_results_df %>% 
+  pivot_longer(
+    mu_hat:sigma_hat,
+    names_to = "parameter", 
+    values_to = "estimate") %>% 
+  group_by(parameter, sample_size) %>% 
+  summarize(
+    emp_mean = mean(estimate),
+    emp_var = var(estimate)) %>% 
+  knitr::kable(digits = 3)
+```
+
+##Using rerun
+
+In cases like these, where the inputs to the function you’re running don’t change, the purrr::rerun function can be very handy.
+
+```{r}
+sim_results_df2 =   
+  rerun(100, sim_mean_sd(30, 2, 3)) %>% 
+  bind_rows()
+
+sim_results_df2
+```
+
+
+Structurally, rerun is a lot like map – the first argument defines the amount of iteration and the second argument is the function to use in each iteration step. As with map, we’ve replaced a for loop with a segment of code that makes our purpose much more transparent but both approaches give the same results.
+
+I can use this process to investigate several sample sizes as well. I’ll start with a for loop around the code I established above using rerun (I could start from scratch by nesting one for loop in another for loop, but let’s not).
+
+```{r}
+n_list = 
+  list(
+    "n_30"  = 30, 
+    "n_60"  = 60, 
+    "n_120" = 120, 
+    "n_240" = 240)
+
+output = vector("list", length = 4)
+
+for (i in 1:4) {
+  output[[i]] = rerun(100, sim_mean_sd(n_list[[i]])) %>% 
+    bind_rows
+}
+
+output
+```
+
+After this loop, output is a list of 4 data frames; each data frame contains the results of 100 simulations at different sample sizes.
+
+Before we spend time looking at the results of the simulation, let’s recast this using list columns and map. I’ll set up a tibble with the sample sizes I want to investigate, and then use rerun to perform the complete simulation for each sample size. Remember that rerun produces a list, so I’m going to use bind_rows to produce a tibble of simulation results for each sample size. Finally, I’ll unnest the tibbles to produce a standard data frame with no list columns.
+
+```{r}
+sim_results_df3 = 
+  tibble(sample_size = c(30, 60, 120, 240)) %>% 
+  mutate(
+    output_lists = map(.x = sample_size, ~rerun(1000, sim_mean_sd(n = .x))),
+    estimate_dfs = map(output_lists, bind_rows)) %>% 
+  select(-output_lists) %>% 
+  unnest(estimate_dfs)
+
+sim_results_df3
+```
+
+The resulting object is structured in the same way as it was when we used map instead of rerun, and can be used to generate similar plots and tables.
+
+## Varying two simulation parameters
+
+```{r}
+sim_results_df4 = 
+  expand_grid(
+    sample_size = c(30, 60, 120, 240),
+    true_sd = c(6, 3),
+    iter = 1:1000
+  ) %>% 
+  mutate(
+    estimate_df = 
+      map2(.x = sample_size, .y = true_sd, ~sim_mean_sd(n = .x, sigma = .y))
+  ) %>% 
+  unnest(estimate_df)
+
+sim_results_df4
+```
+
+```{r}
+sim_results_df4 %>% 
+  mutate(
+    sample_size = str_c("n = ", sample_size),
+    sample_size = fct_inorder(sample_size)) %>% 
+  ggplot(aes(x = sample_size, y = mu_hat, fill = sample_size)) + 
+  geom_violin() + 
+  facet_grid(. ~ true_sd)
+```
+
+

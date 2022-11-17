@@ -1,0 +1,316 @@
+---
+title: "Writing Functions"
+author: "Tim Hauser"
+output: github_document
+---
+
+## Initial setup
+
+```{r}
+library(tidyverse)
+library(rvest)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(1)
+```
+
+## My first function
+
+Chunk below takes a sample from a normal distribution and then computes the vector of Z scores for the sample:
+
+```{r}
+x_vec = rnorm(25, mean = 5, sd = 3)
+
+(x_vec - mean(x_vec)) / sd(x_vec)
+#Note: mean and sd are not exactly 5 resp. 3
+```
+
+If I want to repeat this (admittedly simple) process for lots of samples, I might want to have a function that takes the sample as an argument, computes the vector of Z scores in the body, and returns the result:
+
+```{r}
+z_scores = function(x) {
+  
+  z = (x - mean(x)) / sd(x)
+  
+  return(z)
+  
+}
+```
+
+Testing the function:
+
+```{r}
+z_scores(x_vec)
+#Yields the same as above!
+```
+
+Trying to generate some errors:
+
+```{r}
+z_scores(3)
+z_scores("my name is jeff")
+z_scores(iris)
+z_scores(c(TRUE, FALSE, FALSE, TRUE))
+#However, it doesn't generate errors all the time but tries to make it work...
+```
+
+Improving the function by adding some checks on the argument values using conditional statements:
+
+```{r}
+z_scores = function(x) {
+  
+  if (!is.numeric(x)) {
+    stop("Argument x should be numeric")
+  } 
+  
+  if (length(x) < 3) {
+    stop("Input must have at least three numbers")
+  }
+  
+  z = mean(x) / sd(x)
+  
+  z
+}
+```
+
+Now those errors are handled better:
+
+```{r}
+z_scores(3)
+z_scores("my name is jeff")
+z_scores(iris)
+z_scores(c(TRUE, FALSE, FALSE, TRUE))
+```
+
+
+## Multiple Outputs
+
+Function that takes a given sample size along with a true mean and standard deviation, simulates data from a normal distribution, and returns the estimated mean and standard deviation.
+
+Starting with doing it manually:
+
+```{r}
+sim_data = tibble(
+  x = rnorm(30, mean = 2, sd = 3)
+)
+
+sim_data %>% 
+  summarize(
+    mu_hat = mean(x),
+    sigma_hat = sd(x)
+  )
+```
+
+Doing the same automatically with a function with the ability to change the sample size and parameters (i.e, those will be  arguments). The code that simulates data and computes the sample mean and SD go in the body; and the return statement should include the estimates. 
+
+```{r}
+sim_mean_sd = function(n, mu = 2, sigma = 3) {
+  
+  sim_data = tibble(
+    x = rnorm(n, mean = mu, sd = sigma),
+  )
+  
+  sim_data %>% 
+    summarize(
+      mu_hat = mean(x),
+      sigma_hat = sd(x)
+    )
+}
+```
+
+```{r}
+sim_mean_sd(30)
+
+sim_mean_sd(30, 2, 3)
+# since I already provide default values for mu and signma, this is not really needed
+
+sim_mean_sd(30, 5, 1)
+# However, I can still change the values if I want to!
+
+sim_mean_sd(mu = 5, sigma = 1, n = 100)
+# If I name my input, I can even switch around the way I input it and function will still work
+```
+
+## Scraping Amazon - revisiting past examples
+
+Code we already used:
+
+```{r}
+url = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber=1"
+
+dynamite_html = read_html(url)
+
+review_titles = 
+  dynamite_html %>%
+  html_nodes(".a-text-bold span") %>%
+  html_text()
+
+review_stars = 
+  dynamite_html %>%
+  html_nodes("#cm_cr-review_list .review-rating") %>%
+  html_text() %>%
+  str_extract("^\\d") %>%
+  as.numeric()
+
+review_text = 
+  dynamite_html %>%
+  html_nodes(".review-text-content span") %>%
+  html_text() %>% 
+  str_replace_all("\n", "") %>% 
+  str_trim()
+
+reviews = tibble(
+  title = review_titles,
+  stars = review_stars,
+  text = review_text
+)
+```
+
+Function to scrape review information for any URL to an Amazon review page. Note that this contains some extra code for manipulating the review_text – our previous code worked for the first page, but broke on a later page. The added lines remove entries in review_text that come from embedded images after extracting text from HTML using CSS tags:
+
+```{r}
+read_page_reviews <- function(url) {
+  
+  html = read_html(url)
+  
+  review_titles = 
+    html %>%
+    html_nodes(".a-text-bold span") %>%
+    html_text()
+  
+  review_stars = 
+    html %>%
+    html_nodes("#cm_cr-review_list .review-rating") %>%
+    html_text() %>%
+    str_extract("^\\d") %>%
+    as.numeric()
+  
+  review_text = 
+    html %>%
+    html_nodes(".review-text-content span") %>%
+    html_text() %>% 
+    str_replace_all("\n", "") %>% 
+    str_trim() %>% 
+    str_subset("The media could not be loaded.", negate = TRUE) %>% 
+    str_subset("^$", negate = TRUE)
+  
+  tibble(
+    title = review_titles,
+    stars = review_stars,
+    text = review_text
+  )
+}
+```
+
+Next we’ll use this to read in reviews from a few pages and combine the results:
+
+```{r}
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+vec_urls = str_c(url_base, 1:5)
+
+dynamite_reviews = bind_rows(
+  read_page_reviews(vec_urls[1]),
+  read_page_reviews(vec_urls[2]),
+  read_page_reviews(vec_urls[3]),
+  read_page_reviews(vec_urls[4]),
+  read_page_reviews(vec_urls[5])
+)
+
+dynamite_reviews
+```
+
+## Learning Assignment
+
+In tidy data, we broke the “only copy code twice” rule when we used the code below to process the LoTR words data:
+
+```{r}
+fellowship_ring = readxl::read_excel("./data/LotR_Words.xlsx", range = "B3:D6") %>%
+  mutate(movie = "fellowship_ring")
+
+two_towers = readxl::read_excel("./data/LotR_Words.xlsx", range = "F3:H6") %>%
+  mutate(movie = "two_towers")
+
+return_king = readxl::read_excel("./data/LotR_Words.xlsx", range = "J3:L6") %>%
+  mutate(movie = "return_king")
+
+lotr_tidy = bind_rows(fellowship_ring, two_towers, return_king) %>%
+  janitor::clean_names() %>%
+  gather(key = sex, value = words, female:male) %>%
+  mutate(race = str_to_lower(race)) %>% 
+  select(movie, everything()) 
+```
+
+The function below will read in and clean LoTR data – it differs from the previous code by including some data tidying steps in the function rather than after data have been combined, but produces the same result.
+
+```{r}
+lotr_load_and_tidy = function(path, range, movie_name) {
+  
+  df = readxl::read_excel(path, range = range) %>%
+    janitor::clean_names() %>%
+    gather(key = sex, value = words, female:male) %>%
+    mutate(race = str_to_lower(race),
+           movie = movie_name)
+  
+  df
+  
+}
+
+lotr_tidy = 
+  bind_rows(
+    lotr_load_and_tidy("./data/LotR_Words.xlsx", "B3:D6", "fellowship_ring"),
+    lotr_load_and_tidy("./data/LotR_Words.xlsx", "F3:H6", "two_towers"),
+    lotr_load_and_tidy("./data/LotR_Words.xlsx", "J3:L6", "return_king")) %>%
+  select(movie, everything())
+```
+
+## Functions as arguments
+
+As a quick example, suppose we wanted to get a sense of how similar or different values in a vector are to each other. There are lots of ways to measure this – variance, standard deviation, range, inter-quartile range – and some are more appropriate in some cases than in others. The function below allows you to input a vector and a function, and returns the result of applying the specified function to the vector input.
+
+```{r}
+x_vec = rnorm(25, 0, 1)
+
+my_summary = function(x, summ_func) {
+  summ_func(x)
+}
+
+my_summary(x_vec, sd)
+my_summary(x_vec, mean)
+my_summary(x_vec, IQR)
+my_summary(x_vec, var)
+```
+
+## Scoping and names
+
+Take a look at the code below. Will the call f(x = y) work? If so, what will it produce? What is the current value of x, y, and z?
+
+```{r}
+f = function(x) {
+  z = x + y
+  z
+}
+
+x = 1
+y = 2
+
+f(x = y)
+```
+
+
+
+
