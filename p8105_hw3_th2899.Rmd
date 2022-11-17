@@ -1,0 +1,387 @@
+---
+title: "Homework 3"
+author: "Tim Hauser"
+output: github_document
+---
+
+## Initial setup
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(patchwork)
+
+library(p8105.datasets)
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1
+
+Loading the instacart dataset:
+
+```{r}
+data("instacart")
+
+instacart = 
+  instacart %>% 
+  as_tibble(instacart)
+```
+
+In the following I will do an exploration of the  dataset. First, to gain an overview:
+
+```{r}
+skimr::skim(instacart)
+```
+
+The Instacart Online Grocery Shopping Dataset is an anonymized dataset with over 3 million online grocery orders from more than 200,000 Instacart users from 2017. It consists of `r nrow(instacart)` observations of products orders, and `r ncol(instacart)` different variables: `r names(instacart)`. In total, there are `r instacart %>% select(product_id) %>% distinct %>% count` products found in `r instacart %>% select(user_id, order_id) %>% distinct %>% count` orders from `r instacart %>% select(user_id) %>% distinct %>% count` distinct users.
+
+Most important variables are:
+
+* `r names(instacart)[1]`: order identifier
+* `r names(instacart)[2]`: product identifier
+* `r names(instacart)[5]`: customer identifier
+* `r names(instacart)[7]`: order sequence number for this user (1=first, n=nth), rages from `r range(pull(instacart, order_number))`
+* `r names(instacart)[8]`: day of the week on which the order was placed
+* `r names(instacart)[10]`: stands for days since the last order, capped at 30, NA if order_number = 1, ranges from `r range(pull(instacart, days_since_prior_order))`
+*`r names(instacart)[10]`: aisle identifier, tells us the location of the item in the warehouse
+
+
+The following table counts the number of times each aisle is used in the list of orders and orders them by most frequent to least frequent:
+
+```{r}
+instacart %>% 
+  count(aisle) %>% 
+  arrange(desc(n))
+```
+
+In total, there are `r instacart %>% select(aisle) %>% distinct %>% count` aisles and the most frequently used are fresh vegetables and fresh fruits.
+
+
+The following is a plot showing the number of items ordered in each aisle, limited to aisles with more than 10000 items ordered and ordered in ascending order:
+
+```{r}
+instacart %>% 
+  count(aisle) %>% 
+  filter(n > 10000) %>% 
+  mutate(aisle = fct_reorder(aisle, n)) %>% 
+  ggplot(aes(x = aisle, y = n)) + 
+  geom_point() + 
+  labs(title = "Number of items ordered in each aisle") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+The next table shows the three most popular items in each of the aisles “baking ingredients”, “dog food care”, and “packaged vegetables fruits” and includes number of times each item is ordered in your table:
+
+```{r}
+instacart %>% 
+  filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) %>%
+  group_by(aisle) %>% 
+  count(product_name) %>% 
+  mutate(rank = min_rank(desc(n))) %>% 
+  filter(rank < 4) %>% 
+  arrange(desc(n)) %>%
+  knitr::kable()
+```
+
+The next table displays the mean hour of the day at which "Pink Lady Apples" and "Coffee Ice Cream" are ordered on each day of the week; formatted in an agenda format (i.e., untidied):
+
+```{r}
+instacart %>%
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>%
+  group_by(product_name, order_dow) %>%
+  summarize(mean_hour = mean(order_hour_of_day)) %>%
+  spread(key = order_dow, value = mean_hour) %>%
+  knitr::kable(digits = 2)
+```
+
+
+## Problem 2
+
+Load and tidy the dataset (i.e., includes all originally observed variables and values; has useful variable names; includes a weekday vs weekend variable; encodes with reasonable variable classes, reordered variables):
+```{r}
+accel_df = read.csv("./data/accel_data.csv") %>% 
+  janitor::clean_names() %>% 
+  pivot_longer(
+    activity_1:activity_1440,
+    names_to = "minute",
+    values_to = "activity_count",
+    names_prefix = "activity_"
+  ) %>% 
+  rename(day_type_1 = day) %>% 
+  mutate(
+    day_type_2 = if_else((day_type_1 == "Saturday" | day_type_1 == "Sunday"),"Weekend","Weekday"),
+    minute = as.numeric(minute),
+    week = as.numeric(week),
+    day_id = as.numeric(day_id),
+    day_type_1 = factor(day_type_1, level = c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday")),
+    day_type_2 = factor(day_type_2, level = c("Weekday", "Weekend"))
+  ) %>% 
+  relocate(week, day_id, day_type_1, day_type_2, minute, activity_count)
+```
+
+The following helps to generate an overview of the tidied dataset:
+
+```{r}
+skimr::skim(accel_df)
+```
+
+The dataset contains five weeks of accelerometer data collected on a 63 year-old male with BMI 25, who was admitted to the Advanced Cardiac Care Center of Columbia University Medical Center and diagnosed with congestive heart failure (CHF). Concretely, it consitst of `r nrow(accel_df)` observations of activity counts (one for each minute of each day of a 5 week period), and `r ncol(accel_df)` different variables: `r names(accel_df)` 
+
+* `r names(accel_df)[1]`: week identifier, from `r range(pull(accel_df, week))`, numerical variable
+* `r names(accel_df)[2]`: day identifier, from `r range(pull(accel_df, day_id))`, numerical variable
+* `r names(accel_df)[3]`: day type 1 from Monday, Sunday, categorical variable
+* `r names(accel_df)[4]`: day type 2, Weekday vs. Weekend, categorical variable
+* `r names(accel_df)[5]`: minute identifier, from `r range(pull(accel_df, minute))`, numerical variable
+* `r names(accel_df)[6]`: activity count (for each minute)
+
+Creating a table with total activity over each day (aggregated across minute):
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count)) %>% 
+  knitr::kable()
+```
+
+Plotting above data for better visibility:
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count), day_type_2 = day_type_2) %>% 
+  ggplot(aes(x = day_id, y = total_activity)) + 
+  geom_point() + 
+  geom_line() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Total activity count per day",
+    x = "Day ID",
+    y = "Total Activity Counts",
+    caption = "Data from the accel dataset"
+    )
+```
+
+Looking at above graph it's difficult to make out a trend, as total activity counts vary greatly from day to day. The fitted line is decreasing, indicating that total activity count seems to have been going down over the course of the 5 weeks.
+
+In the following I create a similar graph but separate weekdays from weekends:
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  summarize(total_activity = sum(activity_count), day_type_2 = day_type_2) %>% 
+  ggplot(aes(x = day_id, y = total_activity, color = day_type_2)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Total activity count per day, separated by weekday vs. weekend",
+    x = "Day ID",
+    y = "Total Activity Count",
+    caption = "Data from the accel dataset"
+    ) +
+  theme(legend.title=element_blank()) +
+  facet_grid(. ~ day_type_2)
+```
+
+The above graphs show that while total activity count for weekday generally seemed to have increased over the course of the study, total activity on weekends drastically declined over the same period. Potentially, the test subject forgot to wear the accelerometer on the weekends, since we get two days of complete inactivity.
+
+The following graph is a single-panel plot that shows the 24-hour activity time courses for each day and uses color to indicate day of the week: 
+
+```{r}
+accel_df %>% 
+  group_by(day_id) %>% 
+  ggplot(aes(x = minute, y = activity_count, color = day_type_1)) + 
+  geom_line(alpha = 0.5) +
+  labs(
+    title = "24-hour activity time courses for each day",
+    x = "Hour of the day",
+    y = "Activity Count",
+    caption = "Data from the accel dataset"
+    ) +
+  scale_x_continuous(
+    breaks = seq(0,1440,by = 60),
+    label = seq(0,24,by = 1)) +
+  theme(legend.title=element_blank())
+```
+
+First of all, the grah is quite cluttered, making it difficult to deduct a lot from it. What can be said is that there is generally close to zero activity during midnight-5am, very low activity between 5-6am & 10pm-midnight (we can assume this person usually goes to bed at 10pm and wakes up at 6am), 'normal' activity from 6am-7.30pm and a period of high activity between 7.30-10pm. It also becomes evident from the graph that Sundays are quite slow days for this person, with generally low activity throughout the day.   
+
+
+## Problem 3
+
+Loading the dataset:
+
+```{r}
+data(ny_noaa)
+```
+
+In the following I will do an exploration of the dataset. First, to gain an overview:
+
+```{r}
+skimr::skim(ny_noaa)
+```
+
+The dataset contains variables for New York state weather stations from January 1, 1981 through December 31, 2010.. Concretely, it consitst of `r nrow(ny_noaa)` weather observations (one for day per weather station) and `r ncol(ny_noaa)` different variables: `r names(ny_noaa)` 
+
+* `r names(ny_noaa)[1]`: Weather station ID, character variable
+* `r names(ny_noaa)[2]`: Date of observation, ranging from  `r range(pull(ny_noaa, date))`, numerical variable
+* `r names(ny_noaa)[3]`: Precipitation (tenths of mm), ranging from  `r range(pull(ny_noaa, prcp), na.rm=TRUE)`, numerical variable
+* `r names(ny_noaa)[4]`: Snowfall (mm), ranging from  `r range(pull(ny_noaa, snow), na.rm=TRUE)`, numerical variable
+* `r names(ny_noaa)[5]`: Snow depth (mm), ranging from  `r range(pull(ny_noaa, snwd), na.rm=TRUE)`, numerical variable
+* `r names(ny_noaa)[6]`: Maximum temperature (tenths of degrees C), character variable
+* `r names(ny_noaa)[7]`: Minimum temperature (tenths of degrees C), character variable
+
+The dataset contains extensive missing data and completion rate are problematic for all variables except id and date, . Most problematic are tmax and tmin with a completion rate of only 56.3% an. Snow depth has a completion rate of 77.2%, Snowfall one of 85.3% and precipitation one of 94.4%.
+
+Cleaning the dataset:
+
+```{r}
+ny_noaa = ny_noaa %>% 
+  janitor::clean_names() %>%
+  mutate(
+    tmax = as.numeric(tmax),
+    tmin = as.numeric(tmin),
+    tmax = (tmax / 10),
+    tmin = (tmin / 10),
+    prcp = (prcp / 10),
+    snow = (snow / 10),
+    snwd = (snwd / 10)) %>% 
+  mutate(
+    date = lubridate::ymd(date)) %>%
+  separate(date, into = c("year", "month","day")) %>% 
+  mutate(
+    year = as.integer(year),
+    month = as.integer(month),
+    day = as.integer(day))
+```
+
+The following table counts the number of times each snowfall value is used in the list of weather observations and orders them by most frequent to least frequent:
+
+```{r}
+ny_noaa %>% 
+  count(snow) %>% 
+  arrange(desc(n))
+```
+
+The most frequent one is 0, as on most days of the year no snowfall is observed in New York. The second most common one is NA, which could be problematic as this means we have a lot of missing data. Next, the two most frequent values for snowfall are 2.5 cm and 1.3 cm, meaning most often when snowfall is recorded in New York it is only a very little amount.
+
+The following is a two-panel plot showing the average max temperature in January and in July in each station across years:
+
+```{r}
+ny_noaa %>% 
+  filter(month %in% c(1, 7)) %>% 
+  group_by(id, year, month) %>% 
+  summarize(mean_tmax = mean(tmax)) %>% 
+  ggplot(aes(x = year, y = mean_tmax, color = id)) + 
+  geom_line() +
+  labs(
+    title = "Average max temperature across the years",
+    x = "Year",
+    y = "Average max temperature",
+    caption = "Data from the NY NOAA dataset"
+    ) +
+  theme(legend.position = "none") +
+  facet_grid(. ~ month)
+```
+
+Clearly, the average max temperature in January (around -10 to 8 deg Celsius) is much lower than the corresponding variable in July (around 25 to 30 deg Celsius). There is a surprisingly large variation of average max temperatures across the different measurement stations for each year, for both January and July the temperature range between stations for the same month and year is around 5 deg Celcius. Next, there are quite a bit of fluctuations observed over the years of average tmax temperature over the years for both January and July - it seems as if warm Januarys were followed by warm Julys, and that particularly cold years were 1994 & 2004 and particularly warm years 1990, 1998, 2002 & 2006.
+
+The following is a plot showing tmax vs tmin for the full dataset:
+
+```{r}
+ny_noaa %>% 
+  select(tmax, tmin) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = tmax, y = tmin)) + 
+  geom_hex() +
+  labs(
+    title = "Tmax vs. Tmin",
+    x = "Maximum Temperature",
+    y = "Minimum Temperature",
+    caption = "Data from the NY NOAA dataset"
+    ) +
+  theme(legend.text = element_text(angle = 60, hjust = 1))
+```
+
+There seems to be an (intuitive) trend that high maximum temperature is also associated with a high minimum temperature. Most temperature pairs are distributed on a relatively straight line between -10 / 5 deg Celsius (minimum vs. maximum temperature) and 20 / 28 deg Celcius (minimum vs. maximum temperature).
+
+Next, I created a plot displaying the distribution of tmax and tmin values:
+
+```{r}
+ny_noaa %>% 
+  pivot_longer(
+    tmax:tmin,
+    names_to = "temp_type",
+    values_to = "temp") %>%
+  ggplot(aes(x = temp_type, y = temp)) + 
+  geom_boxplot() +
+  labs(
+    title = "Distrution of tmax vs. tmin",
+    x = "Maximum vs. Minimum Temperature",
+    y = "Temperature",
+    caption = "Data from the NY NOAA dataset"
+    )
+```
+
+Median maximum temperature is  ~10 deg Celsius higher than mean minimum temperature (15 vs. 5 deg Celsius). The values between first and third quartile have a wider distribution in for maximum temperature as compared to minimum temperature. 
+
+The following is a plot showing the distribution of snowfall values greater than 0 and less than 10 cm separately by year:
+
+```{r}
+ny_noaa %>% 
+  filter(snow > 0 & snow < 10) %>% 
+# because I changed the snowfall variable to cm, I adjusted the filter from 100 to 10
+  select(year, snow) %>% 
+  drop_na() %>% 
+  group_by(year) %>% 
+  summarise(n_obs = n()) %>% 
+  ggplot(aes(x= year, y = n_obs)) + 
+  geom_point() +
+  geom_line() +
+  labs(
+    title = "Distrution of snowfall values between 0-10 cm across years",
+    x = "Year",
+    y = "Observation of snowfall between 0-10 cm",
+    caption = "Data from the NY NOAA dataset"
+    )
+```
+
+From the graphic we learn that the total number of observation of snowfall values between 0-10cm pooled across all weather stations in NYC were relatively stable between 1980 and 2006 with ~5'000-6'000 observations (only exception being 2003 with ~3'500 observations) but that the number of observations of snowfall 0-10cm has subsequently greatly increased since to over 12'500 observations in 2010. However, this could be due to a chang e in the number of weather stations in New York that collect weather information and is not necesarily a phenomenon related to actual changes in climate.
+
+To double check that hypothesis we look at the number of distinct weather stations across the years:
+
+```{r}
+ny_noaa %>% 
+  filter(snow > 0 & snow < 10) %>% 
+# because I changed the snowfall variable to cm, I adjusted the filter from 100 to 10
+  select(year, id) %>% 
+  group_by(year) %>% 
+  summarise(n_stations = n_distinct(id)) %>% 
+  ggplot(aes(x= year, y = n_stations)) + 
+  geom_point() +
+  geom_line() +
+  labs(
+    title = "Number of weather stations across years",
+    x = "Year",
+    y = "Number of distinct weather stations",
+    caption = "Data from the NY NOAA dataset"
+    )
+```
+
+In fact, the number of weather stations have greatly increased the years 2006-2010, which likely explains the increase in observations of snowfall noted above.

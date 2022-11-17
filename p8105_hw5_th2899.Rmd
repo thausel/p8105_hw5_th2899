@@ -91,8 +91,96 @@ homicide_df = homicide_raw %>%
            disposition == "Closed without arrest" ~ "unsolved",
            disposition == "Open/No arrest" ~ "unsolved",
            disposition == "Closed by arrest" ~ "solved"
-         ))
+         )) %>% 
+  relocate(city_state)
 ```
 
-nd summarized within cities to obtain the total number of homicides and the number of unsolved homicides.
+Next, I summarize within cities to obtain the total number of homicides and the number of unsolved homicides:
 
+```{r}
+homicide_df %>%
+  group_by(city_state, status) %>%
+  count(status) %>%
+  spread(key = status, value = n) %>% 
+  arrange(desc(unsolved)) %>% 
+  knitr::kable()
+```
+
+The city with the most unsolved crimes (absolute, not as a %) is Chicago, IL.
+
+Next, for the city of Baltimore, MD, I used the prop.test function to estimate the proportion of homicides that are unsolved; saved the output of prop.test as an R object, applied the broom::tidy to this object and pulled the estimated proportion and confidence intervals from the resulting tidy dataframe:
+
+```{r}
+baltimore_df = homicide_df %>%
+  filter(city_state == "Baltimore, MD")
+
+baltimore_unsolved = baltimore_df %>%   
+  summarize(
+    unsolved = sum(status == "unsolved"),
+    n = n()
+  )
+  
+baltimore_prop = 
+  prop.test(
+    x = baltimore_unsolved$unsolved,
+    n = baltimore_unsolved$n) %>% 
+  broom::tidy()
+```
+
+Baltimore has 64.5% unresolved homicides with a 95% CI of 62.8%-66.3%.
+
+
+Next, I ran prop.test for each of the cities in the homicide dataset and extracted both the proportion of unsolved homicides and the confidence interval for each.
+
+First, I created a function that calculates the proportion of unresolved crimes and a corresponding CI:
+
+```{r}
+prop_function = function(city_df) {
+  
+  city_unsolved =
+    city_df %>%
+    summarize(
+      unsolved = sum(status == "unsolved"),
+      n = n()
+      )
+  
+  city_prop =
+    prop.test(
+      x = city_unsolved$unsolved,
+      n = city_unsolved$n)
+  
+  return(city_prop)
+}
+```
+
+Second, I created a nested dataframe
+
+```{r}
+nested_df = homicide_df %>%
+  nest(data = uid:status) %>% 
+  mutate(
+    test_results = map(data, prop_function),
+    tidy_results = map(test_results, broom::tidy)
+  ) %>% 
+  select(city_state, tidy_results) %>% 
+  unnest(tidy_results) %>% 
+  select(city_state, estimate, starts_with("conf"))
+```
+
+Lastly, I created a plot that shows the estimates and CIs for each city using geom_errorbar to add error bars based on the upper and lower limits. I organized cities according to the proportion of unsolved homicides:
+
+```{r}
+nested_df %>%
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1), 
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Proportion of unresolved homicides including 95% CI by city",
+       x = "City, State",
+       y = "% unresolved homicides") 
+```
+
+
+## Problem 3
